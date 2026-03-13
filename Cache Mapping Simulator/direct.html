@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Direct Mapping Cache Simulator (Final)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<style>
+:root{--ink:#e5e7eb;--muted:#94a3b8;--accent:#38bdf8;--hit:#22c55e;--miss:#ef4444;--bg:#020617}
+*{box-sizing:border-box;font-family:system-ui}
+body{margin:0;background:#020617;color:var(--ink)}
+.app{max-width:1200px;margin:auto;padding:20px}
+h1{text-align:center;color:var(--accent)}
+.controls{
+  display:grid;
+  grid-template-columns:2fr 1fr 1fr 1fr auto auto auto auto auto auto;
+  gap:10px;background:#020617;border-radius:14px;padding:12px;border:1px solid #334155
+}
+.field{display:flex;flex-direction:column;gap:6px}
+label{font-size:12px;color:var(--muted)}
+input,button{
+  background:#020617;border:1px solid #334155;border-radius:10px;
+  color:var(--ink);padding:8px 12px
+}
+button{cursor:pointer;font-weight:700}
+.primary{background:linear-gradient(135deg,#0ea5e9,#38bdf8);color:#020617;border:none}
+.danger{background:#ef4444;border:none;color:white}
+.home-btn{
+  background:rgba(56,189,248,.15);
+  border:1px solid rgba(56,189,248,.5);
+  color:var(--accent);
+}
+.home-btn:hover{background:rgba(56,189,248,.25)}
+
+.layout{display:grid;grid-template-columns:2fr 1.5fr;gap:16px;margin-top:14px}
+.panel{background:#020617;border-radius:16px;padding:12px;border:1px solid #334155}
+.cache{display:flex;flex-direction:column;gap:8px;max-width:200px}
+.block{border:1px solid #334155;border-radius:10px;min-height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.hit{border-color:var(--hit);background:rgba(34,197,94,.15)}
+.miss{border-color:var(--miss);background:rgba(239,68,68,.15)}
+.sidebar{display:grid;grid-template-rows:auto auto auto auto 1fr auto;gap:10px}
+.stat{background:#020617;border:1px solid #334155;border-radius:12px;padding:10px;display:grid;grid-template-columns:1fr auto}
+.log{max-height:220px;overflow:auto;background:#020617;border:1px solid #334155;border-radius:12px;padding:8px}
+canvas{background:#020617;border:1px solid #334155;border-radius:12px}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🧱 Direct Mapping Cache </h1>
+
+<div class="controls">
+  <div class="field"><label>Addresses</label><input id="addresses" value="0,1,2,3,0,1,4,0,1,2,3,4"></div>
+  <div class="field"><label>Cache Size</label><input id="cacheSize" type="number" value="4"></div>
+  <div class="field"><label>Block Size</label><input id="blockSize" type="number" value="1"></div>
+  <div class="field"><label>Speed(ms)</label><input id="speed" type="number" value="700"></div>
+
+  <button class="primary" id="start">Start</button>
+  <button id="next">Next</button>
+  <button id="play">▶ Play</button>
+  <button class="danger" id="reset">Reset</button>
+  <button id="exportCsv">Export CSV</button>
+
+  <!-- Home Button -->
+  <button class="home-btn" onclick="location.href='index.html'">🏠 Home</button>
+</div>
+
+<div class="layout">
+  <div class="panel">
+    <h3>Cache Lines</h3>
+    <div id="cache" class="cache"></div>
+  </div>
+
+  <div class="panel sidebar">
+    <div class="stat"><span>Current Address</span><b id="curr">-</b></div>
+    <div class="stat"><span>Hits</span><b id="hits">0</b></div>
+    <div class="stat"><span>Misses</span><b id="misses">0</b></div>
+    <div class="stat"><span>Hit Ratio | Miss Ratio</span><b id="ratio">0% | 0%</b></div>
+    <canvas id="chart" width="260" height="160"></canvas>
+    <div id="log" class="log"></div>
+  </div>
+</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let addrs=[],cache=[],step=0,hits=0,misses=0,ratios=[],timer=null,csvRows=["step,address,result"];
+
+function init(){
+  addrs=$("addresses").value.split(",").map(x=>parseInt(x.trim())).filter(x=>!isNaN(x));
+  cache=Array(+$("cacheSize").value).fill(null);
+  step=0;hits=0;misses=0;ratios=[];csvRows=["step,address,result"];
+  $("log").innerHTML="";$("curr").textContent="-";$("hits").textContent="0";$("misses").textContent="0";$("ratio").textContent="0% | 0%";
+  draw();drawChart();
+}
+function draw(i=null,cls=null){
+  $("cache").innerHTML="";
+  cache.forEach((v,idx)=>{
+    const d=document.createElement("div");
+    d.className="block"+((idx===i&&cls)?(" "+cls):"");
+    d.innerHTML=`<small>Line ${idx}</small><b>${v??"Empty"}</b>`;
+    $("cache").appendChild(d);
+  });
+}
+function updateRatio(){
+  const total=hits+misses;
+  const hr=total?((hits/total)*100).toFixed(1):0;
+  const mr=total?((misses/total)*100).toFixed(1):0;
+  $("ratio").textContent=`${hr}% | ${mr}%`;
+}
+function stepOnce(){
+  if(step>=addrs.length)return;
+  const a=addrs[step];
+  const i=a%cache.length;
+  const hit=cache[i]===a;
+  hit?hits++:misses++;
+  cache[i]=a;
+
+  $("curr").textContent=a; $("hits").textContent=hits; $("misses").textContent=misses; updateRatio();
+  $("log").innerHTML+=`<div>Addr ${a} → ${hit?"HIT":"MISS"} (line ${i})</div>`;
+  csvRows.push(`${step+1},${a},${hit?"HIT":"MISS"}`);
+  ratios.push(hits/Math.max(1,hits+misses));
+  draw(i,hit?"hit":"miss"); drawChart(); step++;
+}
+function play(){
+  if(timer){clearInterval(timer);timer=null;$("play").textContent="▶ Play";return;}
+  $("play").textContent="⏸ Pause";
+  timer=setInterval(()=>{ if(step>=addrs.length){clearInterval(timer);timer=null;$("play").textContent="▶ Play";} else stepOnce(); }, Math.max(200,+$("speed").value||700));
+}
+function drawChart(){
+  const c=$("chart"),ctx=c.getContext("2d");
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.beginPath(); ctx.strokeStyle="#38bdf8"; ctx.lineWidth=2;
+  ratios.forEach((r,i)=>{ const x=10+i*((c.width-20)/Math.max(1,addrs.length-1)); const y=c.height-10-r*(c.height-20); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.stroke();
+}
+$("start").onclick=init; $("next").onclick=stepOnce; $("play").onclick=play;
+$("reset").onclick=()=>{ if(timer){clearInterval(timer);timer=null;$("play").textContent="▶ Play";} init(); };
+$("exportCsv").onclick=()=>{ const blob=new Blob([csvRows.join("\n")],{type:"text/csv"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url;a.download="direct_results.csv";a.click();URL.revokeObjectURL(url); };
+init();
+</script>
+</body>
+</html>
